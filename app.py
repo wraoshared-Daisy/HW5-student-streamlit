@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import io
-
+import altair as alt
 
 # ===== 教师设置 =====
 TRUTH_FILE = "Raw_Occ.xlsx"
@@ -133,15 +133,13 @@ if not st.session_state.graded:
 
                 # 现在我们统一构建一个干净的对比 DataFrame
                 compare_df = pd.DataFrame({
-                    "Truth(老师标准)": truth_slice.to_numpy(),
-                    "Yours(你提交的)": stud_slice.to_numpy()
+                    "答案": truth_slice.to_numpy(),
+                    "你提交的": stud_slice.to_numpy()
                 })
-
-                # 加一个递增顺序列作为横轴，保证 Streamlit 不乱排序
                 compare_df["Order"] = np.arange(1, len(compare_df) + 1)
 
-                # 画图时用 Order 当 index
-                plot_df = compare_df.set_index("Order")[["Truth(老师标准)", "Yours(你提交的)"]]
+                # 这个版本留给展示页使用
+                plot_df = compare_df[["Order", "答案", "你提交的"]].copy()
 
                 # 保存状态
                 st.session_state.report = rpt
@@ -165,12 +163,55 @@ else:
     with c2:
         st.metric("最大误差", f"{rpt['max_err']:.2f}")
 
-    st.write("📍 最大误差出现位置：")
-    st.write(f"- 时间索引: `{rpt['row_label']}`")
-    st.write(f"- 列名: `{rpt['col_label']}`")
+    st.markdown(
+        f"""
+        <div style="font-size:1.6rem; font-weight:600; margin-bottom:0.25rem;">📍 最大误差出现位置：</div>
+        <div style="font-size:2.5rem; margin-left:1rem;">
+            时间索引: <span style="font-weight:600;">{rpt['row_label']}</span><br>
+            列名: <span style="font-weight:600;">{rpt['col_label']}</span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     st.subheader("📈 当天对比曲线（96个时刻）")
-    st.line_chart(st.session_state.col_compare)
+
+    plot_df = st.session_state.col_compare  # 包含列: Order, 答案, 你提交的
+
+    # 为了画多条线，先把列 pivot 成 "name / value" 结构
+    plot_long = plot_df.melt(
+        id_vars="Order",
+        value_vars=["答案", "你提交的"],
+        var_name="系列",
+        value_name="数值"
+    )
+
+    # 颜色映射：答案=红色， 你提交的=蓝色
+    color_scale = alt.Scale(
+        domain=["答案", "你提交的"],
+        range=["red", "steelblue"]
+    )
+
+    chart = (
+        alt.Chart(plot_long)
+        .mark_line(strokeWidth=2)
+        .encode(
+            x=alt.X("Order:Q", title="时序点 (1→96)"),
+            y=alt.Y("数值:Q", title="人数"),
+            color=alt.Color("系列:N", scale=color_scale, title=None),
+            tooltip=[
+                alt.Tooltip("Order:Q", title="序号"),
+                alt.Tooltip("系列:N", title="曲线"),
+                alt.Tooltip("数值:Q", title="值")
+            ]
+        )
+        .properties(
+            width=600,
+            height=300
+        )
+    )
+
+    st.altair_chart(chart, use_container_width=True)
 
     st.divider()
     st.info("修改Excel后，可重新提交：")

@@ -103,28 +103,45 @@ if not st.session_state.graded:
                 idx = df_truth.index
                 col_label = rpt["col_label"]
                 row_label = rpt["row_label"]
+                col_idx = df_truth.columns.get_loc(col_label)
 
                 if np.issubdtype(idx.dtype, np.datetime64):
-                    # 如果是时间索引，按天筛选
-                    day_str = pd.to_datetime(row_label).strftime("%Y-%m-%d")
-                    mask = idx.strftime("%Y-%m-%d") == day_str
-                    compare_df = pd.DataFrame({
-                        "Truth(老师标准)": df_truth.loc[mask, col_label],
-                        "Yours(你提交的)": df_student.loc[mask, col_label]
-                    })
-                    compare_df["Order"] = np.arange(1, len(compare_df) + 1)
-                    plot_df = compare_df.set_index("Order")[["Truth(老师标准)", "Yours(你提交的)"]]
+                    # 情况 1：索引是时间戳，比如 2025-04-08 00:15:00
+                    # 步骤：取“最大误差那一整天”的数据
+                    target_day = pd.to_datetime(row_label).strftime("%Y-%m-%d")
+                    mask = idx.strftime("%Y-%m-%d") == target_day
+
+                    truth_slice = df_truth.loc[mask, col_label]
+                    stud_slice = df_student.loc[mask, col_label]
+
+                    # 如果这一整天不是正好96行（有缺/多），我们截到最多96个点
+                    truth_slice = truth_slice.iloc[:DAY_ROWS]
+                    stud_slice = stud_slice.iloc[:DAY_ROWS]
+
                 else:
-                    # 非时间索引，取误差点附近 ±48行
-                    center = df_truth.index.get_loc(row_label)
-                    lo = max(0, center)
-                    hi = min(len(df_truth), center + 96)
-                    compare_df = pd.DataFrame({
-                        "Truth(老师标准)": df_truth.iloc[lo:hi, df_truth.columns.get_loc(col_label)],
-                        "Yours(你提交的)": df_student.iloc[lo:hi, df_student.columns.get_loc(col_label)]
-                    })
-                    compare_df["Order"] = np.arange(1, len(compare_df) + 1)
-                    plot_df = compare_df.set_index("Order")[["Truth(老师标准)", "Yours(你提交的)"]]
+                    # 情况 2：索引不是时间戳（很常见：你的索引可能是字符串的 "0:00","0:15",... 重复多天，
+                    # 或者根本不是时间，可能是 0,1,2,3,...）
+                    # 我们假设数据是按天拼起来的，每天有固定 96 行
+                    # 思路：拿最大误差这行属于哪一天 -> 把这一整天的96行切出来
+
+                    center_iloc = df_truth.index.get_loc(row_label)  # 误差最大点的行号
+                    day_start = (center_iloc // DAY_ROWS) * DAY_ROWS
+                    day_end = min(day_start + DAY_ROWS, len(df_truth))
+
+                    truth_slice = df_truth.iloc[day_start:day_end, col_idx]
+                    stud_slice = df_student.iloc[day_start:day_end, col_idx]
+
+                # 现在我们统一构建一个干净的对比 DataFrame
+                compare_df = pd.DataFrame({
+                    "Truth(老师标准)": truth_slice.to_numpy(),
+                    "Yours(你提交的)": stud_slice.to_numpy()
+                })
+
+                # 加一个递增顺序列作为横轴，保证 Streamlit 不乱排序
+                compare_df["Order"] = np.arange(1, len(compare_df) + 1)
+
+                # 画图时用 Order 当 index
+                plot_df = compare_df.set_index("Order")[["Truth(老师标准)", "Yours(你提交的)"]]
 
                 # 保存状态
                 st.session_state.report = rpt

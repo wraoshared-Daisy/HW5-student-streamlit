@@ -8,7 +8,7 @@ import altair as alt
 TRUTH_FILE = "Raw_Occ.xlsx"
 SHEET_NAME = 0
 INDEX_COL = 0
-ACCESS_CODE = "ZDM-2025-Homework5"
+ACCESS_CODE = "Feb-2025-Homework5"
 MAX_FILE_SIZE_MB = 2
 DAY_ROWS = 96  # 一天96个时间步
 # ===================
@@ -222,3 +222,4 @@ else:
         st.rerun()
 
 st.caption("提示：请只修正异常值，保持数据结构不变。")
+
